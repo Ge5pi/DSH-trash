@@ -6,6 +6,8 @@
 **Платформа v1:** Linux, Python 3.11+ (stdlib), Node.js только для DSH-плагина  
 **Платформа v1.1:** Windows и macOS (отдельные бэкенды корзины)
 
+**Реализация:** этапы 1–3 завершены, этап 4 (DSH-bundle) написан, но ещё не проверен в живом DSH.
+
 ## Кратко
 
 - **Что:** CLI `dsh-trash` перемещает файлы workspace в системную freedesktop-корзину, хранит расширенные метаданные в SQLite-индексе и восстанавливает записи строго в пределах своего workspace.
@@ -566,7 +568,7 @@ const result = await ctx.subprocess.spawn({
 - `README.md`, `PLAN.md`, `.gitignore`.
 - Коммиты: `docs: add project overview and initial trash design`, `docs: specify storage architecture, data model, and CLI contract`.
 
-### Этап 1. Ядро хранилища и `put`
+### Этап 1. Ядро хранилища и `put` — сделано
 
 - `pyproject.toml` (`console_scripts=dsh-trash`), `errors.py`, `workspace.py`, `metadata.py`, `trashdir.py`, `index.py`.
 - `engine.put`: pending → rename/copy → `.trashinfo` → active.
@@ -574,25 +576,25 @@ const result = await ctx.subprocess.spawn({
 - Тесты: unit, коллизии имён, права, откат при сбое, формат `.trashinfo`.
 - Критерий: файл и каталог попадают в `Trash/files`, `.trashinfo` валиден, запись `active`, источник исчез.
 
-### Этап 2. Просмотр и восстановление
+### Этап 2. Просмотр и восстановление — сделано
 
 - `list`, `show`, `restore`; `--workspace`, `--all`, `--force`, `--to`.
 - Изоляция workspace, сверка sha256, восстановление относительного пути.
 - Тесты: round-trip, конфликт, чужой workspace, исчезнувший payload.
 - Критерий: `put → list → restore` возвращает идентичное содержимое; чужой workspace недоступен.
 
-### Этап 3. Обслуживание
+### Этап 3. Обслуживание — сделано
 
 - `empty --older-than`, `doctor`, `doctor --fix`, reconcile с `.trashinfo`.
 - Защищённые пути, `--no-preview`, лимиты манифеста.
 - Тесты: обрыв `pending`, внешнее удаление, конкурентность, cross-device.
 - Критерий: индекс и корзина сходятся после сбоев; `empty` не выходит за workspace.
 
-### Этап 4. DSH-плагин
+### Этап 4. DSH-плагин — код готов, E2E не проверен
 
 - `dsh-plugin/`: bundle-манифест, patch, `apply()`.
 - Инструменты `trash`, `trash_list`, `trash_restore`; проверка `sandboxPolicy`, `ctx.subprocess`, JSON-валидация.
-- Тесты vitest с фейковым CLI.
+- Тесты helpers с фейковым CLI.
 - Критерий: в `workspace-write` инструмент работает, в `read-only` — отказ, bash-маршрут остаётся закрытым.
 
 ### Этап 5. Документация и выпуск
