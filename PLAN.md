@@ -6,7 +6,7 @@
 **Платформа v1:** Linux, Python 3.11+ (stdlib), Node.js только для DSH-плагина  
 **Платформа v1.1:** Windows и macOS (отдельные бэкенды корзины)
 
-**Реализация:** этапы 1–3 завершены, этап 4 (DSH-bundle) написан, но ещё не проверен в живом DSH.
+**Реализация:** этапы 1–4 реализованы. Bundle загружается в изолированном DSH-профиле, инструменты проверены с реальным `defineTool` и фейковым subprocess; полный model-driven E2E ещё не прогонялся.
 
 ## Кратко
 
@@ -590,7 +590,7 @@ const result = await ctx.subprocess.spawn({
 - Тесты: обрыв `pending`, внешнее удаление, конкурентность, cross-device.
 - Критерий: индекс и корзина сходятся после сбоев; `empty` не выходит за workspace.
 
-### Этап 4. DSH-плагин — код готов, E2E не проверен
+### Этап 4. DSH-плагин — реализован, model-driven E2E не пройден
 
 - `dsh-plugin/`: bundle-манифест, patch, `apply()`.
 - Инструменты `trash`, `trash_list`, `trash_restore`; проверка `sandboxPolicy`, `ctx.subprocess`, JSON-валидация.
