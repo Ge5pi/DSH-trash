@@ -25,22 +25,54 @@ In `workspace-write` mode DSH only allows the agent to modify files inside the w
 
 - Linux (v1).
 - Python 3.11+.
+- Git, to clone the repository.
 - Node.js 20+ — only for the DSH plugin.
 
 ## Installation
 
+The full path from a clean machine:
+
 ```sh
+# 1. Clone the repository
+git clone https://github.com/Ge5pi/DSH-trash.git
+cd DSH-trash
+
+# 2. Create an isolated Python environment (recommended)
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install the CLI in editable mode
+python3 -m pip install --upgrade pip
 python3 -m pip install -e .
+
+# 4. Verify
 dsh-trash version
 ```
 
-The `dsh-trash` executable must be in `PATH`, because the plugin starts it by name. Override the path with `cliPath` in the plugin config.
+If you cloned the repository into a different directory, `cd` into that
+directory instead — the rest of the commands are unchanged.
 
-Run from source without installing:
+`pip install -e .` puts the `dsh-trash` executable into the active environment's
+`bin` directory. The plugin starts it by name, so that directory must be in
+`PATH`; activating the virtual environment does this automatically. Without a
+virtual environment, use `python3 -m pip install --user -e .` and make sure
+`~/.local/bin` is in `PATH`.
+
+Run from source without installing (useful for development and tests):
 
 ```sh
 PYTHONPATH=src python3 -m dsh_trash version
 ```
+
+Common issues:
+
+- `externally-managed-environment` — the system Python refuses global installs;
+  use the virtual environment from step 2.
+- `dsh-trash: command not found` — the environment is not activated, or its
+  `bin` directory is missing from `PATH`. Check with `which dsh-trash`.
+- Plugin cannot find the CLI — install it into the same user environment that
+  runs DSH, or set `cliPath` in `dsh-plugin/cordis.patch.yml` to the absolute
+  path of the executable.
 
 ## CLI
 
