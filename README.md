@@ -14,9 +14,48 @@ DSH в режиме `workspace-write` разрешает агенту менят
 
 ## Статус
 
-План готов и уточнён: CLI называется `dsh-trash`, превью включено по умолчанию, topdir-корзина и платформенные бэкенды Windows/macOS отложены до v1.1. Реализация ещё не начата.
+Реализованы этапы 1–3: `put`, `list`, `show`, `restore`, `empty`, `doctor`, SQLite-sidecar, манифесты каталогов, copy-fallback между ФС и 60 тестов. Следующий этап — DSH-плагин (`trash`, `trash_list`, `trash_restore`).
 
-- [PLAN.md](PLAN.md) — архитектура, модель данных, контракты CLI и инструментов DSH, безопасность, тесты, этапы v1 и v1.1.
+План и ограничения: [PLAN.md](PLAN.md). Превью включено по умолчанию, topdir-корзина и Windows/macOS — v1.1.
+
+## Установка
+
+```sh
+python3 -m pip install -e .
+dsh-trash version
+```
+
+Без установки, из исходников:
+
+```sh
+PYTHONPATH=src python3 -m dsh_trash version
+```
+
+## Использование
+
+```sh
+# переместить файл/каталог в корзину (workspace по умолчанию — текущий каталог)
+dsh-trash put ./dist --workspace . --reason "cleanup" --json
+
+# что лежит в корзине этого workspace
+dsh-trash list --workspace .
+dsh-trash show <id> --json
+
+# вернуть запись (конфликт с существующим файлом — только с --force)
+dsh-trash restore <id> --workspace .
+
+# сверка индекса и корзины, очистка старых записей
+dsh-trash doctor --fix
+dsh-trash empty --workspace . --older-than 30d --yes
+```
+
+`--json` печатает стабильный контракт для плагина и скриптов; коды возврата описаны в [PLAN.md](PLAN.md#5-контракт-cli).
+
+## Тесты
+
+```sh
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
 
 ## Планируемая структура
 
