@@ -51,7 +51,9 @@ def resolve_workspace(path: str | os.PathLike[str]) -> Workspace:
 def is_within(root: Path, target: Path) -> bool:
     """True when *target* is strictly below *root* (both absolute)."""
     try:
-        return os.path.commonpath([str(root), str(target)]) == str(root) and target != root
+        root_key = os.path.normcase(str(root))
+        target_key = os.path.normcase(str(target))
+        return os.path.commonpath([root_key, target_key]) == root_key and target != root
     except ValueError:  # different drives on Windows
         return False
 

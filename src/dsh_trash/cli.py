@@ -30,7 +30,7 @@ def _human_put(result: dict[str, Any]) -> str:
 
 def _human_version(info: dict[str, Any]) -> str:
     return (
-        f"dsh-trash {info['version']}\n"
+        f"dsh-trash {info['version']} ({info['platform']}/{info['backend']})\n"
         f"data:  {info['data_dir']}\n"
         f"trash: {info['trash_dir']}"
     )
@@ -98,8 +98,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "version":
             paths = TrashPaths.create()
+            backend = "freedesktop" if paths.freedesktop else (
+                "macos" if paths.platform == "darwin" else "portable"
+            )
             info = {
                 "version": __version__,
+                "platform": paths.platform,
+                "backend": backend,
                 "data_dir": str(paths.state),
                 "trash_dir": str(paths.trash),
             }

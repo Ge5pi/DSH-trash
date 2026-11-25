@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import os
 import stat
 import unittest
@@ -92,7 +93,10 @@ class TrashDirTests(unittest.TestCase):
         link_src = self.root / "l"
         link_src.symlink_to(file_src)
 
-        with patch("dsh_trash.trashdir.same_device", return_value=False):
+        with patch(
+            "dsh_trash.trashdir.os.rename",
+            side_effect=OSError(errno.EXDEV, "cross-device link"),
+        ):
             move_path(file_src, payload / "f.txt")
             move_path(dir_src, payload / "d")
             move_path(link_src, payload / "l")

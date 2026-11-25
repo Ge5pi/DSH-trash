@@ -64,8 +64,14 @@ def summary(entry: dict[str, Any]) -> dict[str, Any]:
 class TrashEngine:
     """One filesystem trash store rooted at a given ``XDG_DATA_HOME``."""
 
-    def __init__(self, data_home: str | os.PathLike[str] | None = None) -> None:
-        self.paths = TrashPaths.create(data_home)
+    def __init__(
+        self,
+        data_home: str | os.PathLike[str] | None = None,
+        *,
+        platform: str | None = None,
+        home: str | os.PathLike[str] | None = None,
+    ) -> None:
+        self.paths = TrashPaths.create(data_home, platform=platform, home=home)
 
     # -- put ---------------------------------------------------------
 
@@ -161,17 +167,19 @@ class TrashEngine:
             payload_name = reserve_name(self.paths.files, self.paths.info, target.name)
             pending["payload_name"] = payload_name
             pending["payload_path"] = str(self.paths.files / payload_name)
-            pending["trashinfo_path"] = str(self.paths.info / f"{payload_name}.trashinfo")
+            if self.paths.info is not None:
+                pending["trashinfo_path"] = str(self.paths.info / f"{payload_name}.trashinfo")
             index.insert_pending(pending)
             payload = self.paths.files / payload_name
             move_path(target, payload)
             moved = True
-            info_path = write_trashinfo(self.paths.info, payload_name, target)
+            if self.paths.info is not None:
+                info_path = write_trashinfo(self.paths.info, payload_name, target)
             index.mark_active(
                 entry_id,
                 payload_name=payload_name,
                 payload_path=str(payload),
-                trashinfo_path=str(info_path),
+                trashinfo_path=str(info_path) if info_path is not None else "",
             )
         except Exception as exc:
             message = getattr(exc, "message", str(exc))
@@ -262,8 +270,9 @@ class TrashEngine:
 
                 target.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
                 move_path(payload, target)
-                with contextlib.suppress(TrashError):
-                    remove_trashinfo(Path(entry["trashinfo_path"]))
+                if entry["trashinfo_path"]:
+                    with contextlib.suppress(TrashError):
+                        remove_trashinfo(Path(entry["trashinfo_path"]))
                 restored_at = utc_now()
                 restored_sha = entry["sha256"]
                 index.mark_restored(
@@ -367,8 +376,9 @@ class TrashEngine:
                     else:
                         with contextlib.suppress(OSError):
                             payload.unlink()
-                    with contextlib.suppress(OSError):
-                        Path(entry["trashinfo_path"]).unlink()
+                    if entry["trashinfo_path"]:
+                        with contextlib.suppress(OSError):
+                            Path(entry["trashinfo_path"]).unlink()
                     if entry["manifest_path"]:
                         with contextlib.suppress(OSError):
                             Path(entry["manifest_path"]).unlink()
@@ -389,8 +399,8 @@ class TrashEngine:
                     if fix:
                         payload = Path(entry["payload_path"]) if entry["payload_path"] else None
                         if payload is not None and (payload.exists() or payload.is_symlink()):
-                            info = Path(entry["trashinfo_path"])
-                            if not info.exists():
+                            info = Path(entry["trashinfo_path"]) if entry["trashinfo_path"] else None
+                            if info is not None and not info.exists():
                                 when = datetime.fromisoformat(
                                     entry["trashed_at"].replace("Z", "+00:00")
                                 ).astimezone()
@@ -404,7 +414,7 @@ class TrashEngine:
                                 entry_id,
                                 payload_name=payload.name,
                                 payload_path=str(payload),
-                                trashinfo_path=str(info),
+                                trashinfo_path=str(info) if info is not None else "",
                             )
                         else:
                             index.mark_failed(entry_id, "interrupted put: payload is missing")
@@ -434,9 +444,10 @@ class TrashEngine:
                     elif deep and entry["sha256"]:
                         if sha256_file(payload) != entry["sha256"]:
                             issues.append({"kind": "digest_mismatch", "id": entry_id})
-            for info in sorted(self.paths.info.glob("*.trashinfo")):
-                if str(info) not in known_info:
-                    issues.append({"kind": "orphan_trashinfo", "path": str(info)})
+            if self.paths.info is not None:
+                for info in sorted(self.paths.info.glob("*.trashinfo")):
+                    if str(info) not in known_info:
+                        issues.append({"kind": "orphan_trashinfo", "path": str(info)})
         return {"issues": issues, "checked": len(entries)}
 
 

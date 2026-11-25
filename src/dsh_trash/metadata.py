@@ -7,6 +7,7 @@ import hashlib
 import os
 import stat as stat_mod
 import struct
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -82,13 +83,16 @@ def _statx_birthtime(path: Path) -> int | None:
 
 def birthtime_ns(st: os.stat_result, path: Path | None = None) -> int | None:
     """Return creation time when the platform exposes it, else ``None``."""
+    if sys.platform == "win32":
+        # On Windows st_ctime is the creation time; st_mtime is the last write.
+        return int(st.st_ctime_ns)
     value = getattr(st, "st_birthtime_ns", None)
     if value:
         return int(value)
     value = getattr(st, "st_birthtime", None)
     if value:
         return int(value * 1_000_000_000)
-    if path is not None:
+    if path is not None and sys.platform.startswith("linux"):
         try:
             return _statx_birthtime(path)
         except OSError:
