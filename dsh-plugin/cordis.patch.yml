@@ -1,0 +1,7 @@
+- insert:
+    - id: tool-trash
+      name: dsh-plugin-trash
+      config:
+        cliPath: dsh-trash
+        timeoutMs: 20000
+        preview: true

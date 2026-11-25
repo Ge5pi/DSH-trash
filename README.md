@@ -14,7 +14,7 @@ DSH в режиме `workspace-write` разрешает агенту менят
 
 ## Статус
 
-Реализованы этапы 1–3: `put`, `list`, `show`, `restore`, `empty`, `doctor`, SQLite-sidecar, манифесты каталогов, copy-fallback между ФС и 60 тестов. Следующий этап — DSH-плагин (`trash`, `trash_list`, `trash_restore`).
+Реализованы CLI (`put`, `list`, `show`, `restore`, `empty`, `doctor`, SQLite-sidecar, манифесты каталогов, copy-fallback между ФС) и DSH-bundle с инструментами `trash`, `trash_list`, `trash_restore`. Python: 60 тестов; helpers плагина: 6 тестов. Интеграция плагина с живым DSH ещё не проверялась end-to-end.
 
 План и ограничения: [PLAN.md](PLAN.md). Превью включено по умолчанию, topdir-корзина и Windows/macOS — v1.1.
 
@@ -50,6 +50,25 @@ dsh-trash empty --workspace . --older-than 30d --yes
 ```
 
 `--json` печатает стабильный контракт для плагина и скриптов; коды возврата описаны в [PLAN.md](PLAN.md#5-контракт-cli).
+
+## DSH-плагин
+
+CLI должен быть доступен в `PATH` (или укажите `cliPath` в конфиге). Установка bundle в профиль:
+
+```sh
+dsh plugin --profile trash add ./dsh-plugin
+dsh --profile trash
+```
+
+Инструменты:
+
+| Инструмент | Назначение |
+|------------|------------|
+| `trash` | переместить путь workspace в корзину, вернуть id записи |
+| `trash_list` | показать активные записи текущего workspace |
+| `trash_restore` | вернуть запись по id; `force` заменяет существующий файл |
+
+Плагин проверяет `sandboxPolicy` до вызова CLI: в `read-only` инструменты отказывают, в `workspace-write` принимают только пути внутри workspace. Запись в `Trash` выполняется CLI как доверенным хост-процессом — `ctx.fs` и sandbox не ослабляются.
 
 ## Тесты
 
