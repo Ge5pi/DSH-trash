@@ -4,9 +4,9 @@
 **Дата:** 2026-11-25  
 **Репозиторий:** каталог `gio_trash`; проект и CLI — `dsh-trash`  
 **Платформа v1:** Linux, Python 3.11+ (stdlib), Node.js только для DSH-плагина  
-**Платформа v1.1:** Windows и macOS (отдельные бэкенды корзины)
+**Платформа v1.1:** macOS — `~/.Trash`; Windows — portable-корзина (нативный Recycle Bin отложен)
 
-**Реализация:** этапы 1–4 реализованы. Bundle загружается в изолированном DSH-профиле, инструменты проверены с реальным `defineTool` и фейковым subprocess; полный model-driven E2E ещё не прогонялся.
+**Реализация:** этапы 1–4 реализованы. Bundle загружается в изолированном DSH-профиле, инструменты проверены с реальным `defineTool` и живым CLI. v1.1 частично: macOS `~/.Trash` и Windows portable-корзина покрыты симулированными тестами; topdir, нативный Recycle Bin и прогоны на реальных macOS/Windows ещё впереди.
 
 ## Кратко
 
@@ -604,13 +604,20 @@ const result = await ctx.subprocess.spawn({
 - CI: pytest + vitest + линтеры; сборка wheel.
 - Критерий: чистая установка с нуля по README; E2E-чек-лист пройден.
 
-### Этап 6. v1.1 — topdir-корзина, Windows и macOS
+### Этап 6. v1.1 — topdir-корзина, Windows и macOS — частично реализовано
 
-- **Topdir-корзина** для файлов на другой ФС: `<mount>/.Trash/$uid` или `<mount>/.Trash-$uid` по спецификации; атомарный `rename` вместо copy-fallback, учёт прав и sticky-bit.
-- **Абстракция бэкенда**: `TrashBackend` (`put`, `restore`, `delete`, `locate`) с реализациями `freedesktop` (v1) и `windows`/`macos` (v1.1).
-- **Windows**: Recycle Bin через `IFileOperation`/`SHFileOperation`; метаданные — только sidecar-индекс (`.trashinfo` не используется).
-- **macOS**: `NSFileManager.trashItem` / `~/.Trash`; restore — обратное перемещение с проверкой workspace.
-- Тесты на CI-раннерах Windows/macOS; кросс-платформенные пути (case-insensitive ФС, длинные пути, unicode).
+Сделано:
+
+- **Платформенный слой** (`platforms.py`): выбор ОС, data-home, признак freedesktop-корзины, тестовый override.
+- **macOS**: настоящий `~/.Trash`; `.trashinfo` не используется, метаданные живут в индексе; restore — обратное перемещение с проверкой workspace.
+- **Windows (portable)**: `%LOCALAPPDATA%\dsh-trash\Trash\files`; `.trashinfo` не используется; блокировка через `msvcrt`, кроссплатформенные пути и `normcase` для containment.
+- **Тесты**: симуляция darwin/windows на Linux (пути, round-trip, отсутствие `.trashinfo`).
+
+Осталось:
+
+- **Topdir-корзина** для файлов на другой ФС: `<mount>/.Trash/$uid` или `<mount>/.Trash-$uid`; атомарный `rename` вместо copy-fallback, права и sticky-bit.
+- **Нативный Windows Recycle Bin** через `IFileOperation`/`SHFileOperation` и восстановление; текущий Windows-бэкенд portable и в Проводнике не виден.
+- Прогоны на реальных macOS/Windows и CI-раннерах; длинные пути, unicode, case-insensitive ФС.
 - Критерий: round-trip на каждой ОС; workspace-изоляция и sandbox-политика не меняются; Linux-поведение v1 не регрессирует.
 
 ---
@@ -662,7 +669,9 @@ const result = await ctx.subprocess.spawn({
 ## 12. Definition of Done (v1.1)
 
 - [ ] Topdir-корзина работает на отдельном смонтированном разделе без копирования через домашнюю ФС.
-- [ ] Windows и macOS: `put/list/restore` работают, workspace-изоляция и `read-only` соблюдаются.
+- [x] macOS: `put/list/restore` работают на `~/.Trash` в симулированных тестах; workspace-изоляция и `read-only` соблюдаются.
+- [x] Windows: portable-корзина проходит `put/list/restore` в симулированных тестах; workspace-изоляция соблюдается.
+- [ ] Нативный Windows Recycle Bin: записи видны в Проводнике, restore работает.
 - [ ] Метаданные и JSON-контракт CLI не различаются между платформами; Linux-тесты v1 остаются зелёными.
 - [ ] CI собирает и тестирует все три ОС; README описывает различия бэкендов.
 

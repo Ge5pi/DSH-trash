@@ -19,14 +19,27 @@ In `workspace-write` mode DSH only allows the agent to modify files inside the w
 - **Conflict safety**: an existing file is never silently overwritten. `--force` is required, and the existing file is moved to the trash first.
 - **Maintenance**: `doctor` reconciles the index with the trash, `empty` removes old entries.
 - **Cross-filesystem support**: when the trash lives on another device, the CLI uses copy + fsync + unlink.
+- **Platform backends**: freedesktop trash on Linux, the real `~/.Trash` on macOS, and a portable trash on Windows.
 - **DSH tools**: `trash`, `trash_list`, and `trash_restore`, guarded by `sandboxPolicy`.
 
 ## Requirements
 
-- Linux (v1).
+- Linux, macOS, or Windows.
 - Python 3.11+.
 - Git, to clone the repository.
 - Node.js 20+ — only for the DSH plugin.
+
+## Platform status
+
+| Platform | Where payloads go | Metadata | Status |
+|----------|-------------------|----------|--------|
+| Linux | freedesktop `Trash/files` + `Trash/info` | `.trashinfo` + SQLite index | tested |
+| macOS | the user's real `~/.Trash` | SQLite index (macOS has no `.trashinfo`) | simulated on Linux |
+| Windows | portable `%LOCALAPPDATA%\dsh-trash\Trash\files` | SQLite index | simulated on Linux; not the Recycle Bin yet |
+
+On Windows the current backend is a DSH-managed portable trash, not the
+Explorer Recycle Bin. Native Recycle Bin integration and macOS/Windows
+hardware runs are the next v1.1 step.
 
 ## Installation
 
@@ -72,7 +85,7 @@ Common issues:
   `bin` directory is missing from `PATH`. Check with `which dsh-trash`.
 - Plugin cannot find the CLI — install it into the same user environment that
   runs DSH, or set `cliPath` in `dsh-plugin/cordis.patch.yml` to the absolute
-  path of the executable.
+  path of the executable. On Windows the console script is `dsh-trash.exe`.
 
 ## CLI
 
@@ -160,14 +173,19 @@ preview: true
 ## How it works
 
 ```
-model → DSH plugin → dsh-trash CLI → Trash/files + Trash/info
+model → DSH plugin → dsh-trash CLI → platform trash (files/info or ~/.Trash)
                                           │
                                    SQLite index and manifests
 ```
 
-- **Trash**: `$XDG_DATA_HOME/Trash` (default `~/.local/share/Trash`).
-- **Index**: `$XDG_DATA_HOME/dsh-trash/index.sqlite3`, mode 0600; the directory is 0700.
-- **Directory manifests**: `$XDG_DATA_HOME/dsh-trash/manifests/<id>.json`.
+- **Trash**:
+  - Linux: `$XDG_DATA_HOME/Trash` (default `~/.local/share/Trash`), with `.trashinfo` files.
+  - macOS: the user's `~/.Trash`; the index is the only metadata source.
+  - Windows: `%LOCALAPPDATA%\dsh-trash\Trash\files` (portable, not the Recycle Bin).
+- **Index**: `dsh-trash/index.sqlite3` under the platform data directory
+  (`$XDG_DATA_HOME` on Linux, `~/Library/Application Support` on macOS,
+  `%LOCALAPPDATA%` on Windows), mode 0600; the directory is 0700.
+- **Directory manifests**: `dsh-trash/manifests/<id>.json` beside the index.
 - **Workspace identity** is the `(st_dev, st_ino)` pair of the root, so renaming the directory keeps the same workspace id.
 - **Restore** uses the relative path from the current workspace root, not a stale absolute path.
 - **Entry states**: `pending → active → restored`, plus `missing` and `failed` for diagnostics.
@@ -176,7 +194,10 @@ Detailed architecture, data model, and design rationale live in [PLAN.md](PLAN.m
 
 ## Limitations
 
-- v1 supports Linux only. Topdir trash for separate mounts, Windows, and macOS are planned for v1.1.
+- Windows uses a portable DSH-managed trash, so entries do not appear in the Explorer Recycle Bin. Native Recycle Bin integration is still pending.
+- macOS uses the real `~/.Trash`, but macOS does not use `.trashinfo`; if the DSH index is lost, entries can only be restored manually.
+- Linux topdir trash for separate mounts (`<mount>/.Trash-$uid`) is still pending.
+- macOS and Windows backends are covered by simulated tests on Linux; they have not yet been exercised on real macOS/Windows hardware.
 - `birthtime` is read through Linux `statx(2)` when the filesystem exposes it; otherwise it is `NULL`.
 - The trash is shared with other applications. If it is emptied externally, `doctor` reports `missing` and the payload cannot be recovered from the index.
 - One `trash` call handles one path; bulk cleanup means several calls.
@@ -191,7 +212,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 cd dsh-plugin && node --test test/*.test.js
 ```
 
-Currently: 63 Python tests and 9 plugin tests (including a live `defineTool` + CLI round trip).
+Currently: 70 Python tests and 9 plugin tests (including a live `defineTool` + CLI round trip).
 
 ## Layout
 
