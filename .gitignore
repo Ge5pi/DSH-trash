@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / DSH plugin
+node_modules/
+dsh-plugin/lib/
+*.tsbuildinfo
+
+# Local scratch
+.probe/
+.env
