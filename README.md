@@ -145,12 +145,12 @@ Detailed architecture, data model, and design rationale live in [PLAN.md](PLAN.m
 ## Limitations
 
 - v1 supports Linux only. Topdir trash for separate mounts, Windows, and macOS are planned for v1.1.
-- `birthtime` is `NULL` on Linux for now: `os.stat` does not expose statx btime.
+- `birthtime` is read through Linux `statx(2)` when the filesystem exposes it; otherwise it is `NULL`.
 - The trash is shared with other applications. If it is emptied externally, `doctor` reports `missing` and the payload cannot be recovered from the index.
 - One `trash` call handles one path; bulk cleanup means several calls.
 - There is no automatic retention policy, only manual `empty`.
 - Text previews are enabled by default; use `--no-preview` for sensitive files.
-- The DSH bundle is implemented and its helpers are tested, but it has not yet been exercised end-to-end in a live DSH.
+- The DSH bundle loads in an isolated DSH profile and its tools are tested against the real `defineTool` with a fake subprocess; a full model-driven run is still pending.
 
 ## Testing
 
@@ -159,7 +159,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 cd dsh-plugin && node --test test/*.test.js
 ```
 
-Currently: 60 Python tests and 6 plugin helper tests.
+Currently: 63 Python tests and 8 plugin tests (including a real `defineTool` integration with a fake subprocess).
 
 ## Layout
 

@@ -20,3 +20,7 @@ dsh-plugin/lib/
 # Local scratch
 .probe/
 .env
+
+# Local DSH end-to-end sandbox
+.e2e-home/
+.e2e-store/
