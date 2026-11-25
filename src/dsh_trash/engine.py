@@ -8,6 +8,7 @@ import os
 import secrets
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -157,8 +158,11 @@ class TrashEngine:
         info_path: Path | None = None
         try:
             pending["workspace_id"] = index.ensure_workspace(workspace)
-            index.insert_pending(pending)
             payload_name = reserve_name(self.paths.files, self.paths.info, target.name)
+            pending["payload_name"] = payload_name
+            pending["payload_path"] = str(self.paths.files / payload_name)
+            pending["trashinfo_path"] = str(self.paths.info / f"{payload_name}.trashinfo")
+            index.insert_pending(pending)
             payload = self.paths.files / payload_name
             move_path(target, payload)
             moved = True
@@ -382,6 +386,28 @@ class TrashEngine:
                 entry_id = entry["id"]
                 if entry["state"] == "pending":
                     issues.append({"kind": "pending", "id": entry_id, "message": "put did not finish"})
+                    if fix:
+                        payload = Path(entry["payload_path"]) if entry["payload_path"] else None
+                        if payload is not None and (payload.exists() or payload.is_symlink()):
+                            info = Path(entry["trashinfo_path"])
+                            if not info.exists():
+                                when = datetime.fromisoformat(
+                                    entry["trashed_at"].replace("Z", "+00:00")
+                                ).astimezone()
+                                write_trashinfo(
+                                    info.parent,
+                                    payload.name,
+                                    Path(entry["original_path"]),
+                                    when,
+                                )
+                            index.mark_active(
+                                entry_id,
+                                payload_name=payload.name,
+                                payload_path=str(payload),
+                                trashinfo_path=str(info),
+                            )
+                        else:
+                            index.mark_failed(entry_id, "interrupted put: payload is missing")
                     continue
                 if entry["state"] != "active":
                     continue

@@ -137,5 +137,26 @@ class MaintenanceTests(unittest.TestCase):
                 os.environ["XDG_DATA_HOME"] = old
 
 
+    def test_doctor_fix_recovers_pending_with_payload(self) -> None:
+        result = self._put()
+        info = self.data / "Trash" / "info" / f"{result['payload_name']}.trashinfo"
+        info.unlink()
+        with sqlite3.connect(self.data / "dsh-trash" / "index.sqlite3") as db:
+            db.execute("UPDATE entries SET state = 'pending' WHERE id = ?", (result["id"],))
+        self.engine.doctor(fix=True)
+        with Index(self.data / "dsh-trash" / "index.sqlite3") as index:
+            self.assertEqual(index.get(result["id"])["state"], "active")
+        self.assertTrue(info.is_file())
+
+    def test_doctor_fix_fails_pending_without_payload(self) -> None:
+        result = self._put()
+        (self.data / "Trash" / "files" / result["payload_name"]).unlink()
+        with sqlite3.connect(self.data / "dsh-trash" / "index.sqlite3") as db:
+            db.execute("UPDATE entries SET state = 'pending' WHERE id = ?", (result["id"],))
+        self.engine.doctor(fix=True)
+        with Index(self.data / "dsh-trash" / "index.sqlite3") as index:
+            self.assertEqual(index.get(result["id"])["state"], "failed")
+
+
 if __name__ == "__main__":
     unittest.main()

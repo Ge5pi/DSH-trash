@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import os
 import stat as stat_mod
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -50,14 +52,47 @@ def read_preview(path: Path, *, max_chars: int = MAX_PREVIEW_CHARS) -> tuple[str
     return text[:max_chars], truncated
 
 
-def birthtime_ns(st: os.stat_result) -> int | None:
-    """Best-effort creation time; Linux ``os.stat`` does not expose statx btime."""
+def _statx_birthtime(path: Path) -> int | None:
+    """Ask Linux statx(2) for btime; returns ``None`` when unsupported."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    statx = getattr(libc, "statx", None)
+    if statx is None:
+        return None
+    statx.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_uint,
+        ctypes.c_void_p,
+    ]
+    statx.restype = ctypes.c_int
+    buf = ctypes.create_string_buffer(256)
+    # AT_FDCWD = -100, AT_SYMLINK_NOFOLLOW = 0x100, STATX_BTIME = 0x800.
+    if statx(-100, os.fsencode(path), 0x100, 0x800, buf) != 0:
+        return None
+    mask = struct.unpack_from("<I", buf, 0)[0]
+    if not mask & 0x800:
+        return None
+    # struct statx: stx_btime sits after mask/blksize/attributes/nlink/uid/gid/
+    # mode/spare/ino/size/blocks/attributes_mask; sec at 80, nsec at 88.
+    seconds = struct.unpack_from("<q", buf, 80)[0]
+    nanos = struct.unpack_from("<I", buf, 88)[0]
+    return int(seconds) * 1_000_000_000 + int(nanos)
+
+
+def birthtime_ns(st: os.stat_result, path: Path | None = None) -> int | None:
+    """Return creation time when the platform exposes it, else ``None``."""
     value = getattr(st, "st_birthtime_ns", None)
     if value:
         return int(value)
     value = getattr(st, "st_birthtime", None)
     if value:
         return int(value * 1_000_000_000)
+    if path is not None:
+        try:
+            return _statx_birthtime(path)
+        except OSError:
+            return None
     return None
 
 
@@ -156,7 +191,7 @@ def collect(path: Path, *, preview: bool = True, hash_files: bool = True) -> tup
         "gid": int(st.st_gid),
         "mtime_ns": int(st.st_mtime_ns),
         "ctime_ns": int(st.st_ctime_ns),
-        "birthtime_ns": birthtime_ns(st),
+        "birthtime_ns": birthtime_ns(st, path),
         "link_target": None,
         "sha256": None,
         "preview": None,

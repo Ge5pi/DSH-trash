@@ -108,3 +108,9 @@ class MetadataTests(unittest.TestCase):
         os.mkfifo(fifo)
         with self.assertRaises(TrashIOError):
             collect(fifo)
+
+    def test_birthtime_is_available_or_null(self) -> None:
+        path = self.root / "born.txt"
+        path.write_text("x")
+        meta, _ = collect(path)
+        self.assertTrue(meta["birthtime_ns"] is None or meta["birthtime_ns"] > 0)
