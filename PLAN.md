@@ -1,17 +1,18 @@
-# План: обратимая корзина для DSH (`gio_trash`)
+# План: обратимая корзина для DSH (`dsh-trash`)
 
 **Статус:** план готов, на ревью  
 **Дата:** 2026-11-25  
-**Репозиторий:** `gio_trash` (отдельный от монорепозитория DSH)  
-**Платформа v1:** Linux, Python 3.11+ (stdlib), Node.js только для DSH-плагина
+**Репозиторий:** каталог `gio_trash`; проект и CLI — `dsh-trash`  
+**Платформа v1:** Linux, Python 3.11+ (stdlib), Node.js только для DSH-плагина  
+**Платформа v1.1:** Windows и macOS (отдельные бэкенды корзины)
 
 ## Кратко
 
-- **Что:** CLI `gio-trash` перемещает файлы workspace в системную freedesktop-корзину, хранит расширенные метаданные в SQLite-индексе и восстанавливает записи строго в пределах своего workspace.
+- **Что:** CLI `dsh-trash` перемещает файлы workspace в системную freedesktop-корзину, хранит расширенные метаданные в SQLite-индексе и восстанавливает записи строго в пределах своего workspace.
 - **Почему так:** payload остаётся в стандартной корзине (виден файловым менеджерам), а sidecar-индекс даёт workspace, хеши, даты и манифесты, которых нет в `.trashinfo`.
 - **Почему без `gio` CLI:** он не изолируется через `XDG_DATA_HOME`, зависит от gvfs-демона, локализован и отказывается работать на tmpfs. Спецификацию реализуем сами (stdlib), совместимость проверяем через `gio trash --list`.
 - **Интеграция:** отдельный DSH bundle с инструментами `trash`, `trash_list`, `trash_restore`; плагин запускает CLI доверенным хост-процессом и сам проверяет sandbox-политику. Дополнительные writable roots не нужны.
-- **План:** 5 этапов — ядро/`put`, просмотр/`restore`, обслуживание, DSH-плагин, документация и выпуск.
+- **План:** 5 этапов v1 — ядро/`put`, просмотр/`restore`, обслуживание, DSH-плагин, документация и выпуск; затем v1.1 — topdir-корзина, Windows и macOS.
 
 ## Содержание
 
@@ -24,8 +25,9 @@
 7. [Безопасность](#7-безопасность)
 8. [Тестирование](#8-тестирование)
 9. [Поэтапный план работ](#9-поэтапный-план-работ)
-10. [Риски и открытые вопросы](#10-риски-и-открытые-вопросы)
-11. [Definition of Done](#11-definition-of-done-v1)
+10. [Риски и вопросы](#10-риски-и-вопросы)
+11. [Definition of Done (v1)](#11-definition-of-done-v1)
+12. [Definition of Done (v1.1)](#12-definition-of-done-v11)
 
 ---
 
@@ -39,7 +41,7 @@ DSH в режиме `workspace-write` разрешает изменения то
 - перенос в системную корзину — это запись в `~/.local/share/Trash`, то есть **за пределами** workspace, поэтому sandbox её блокирует;
 - у DSH нет способа сказать «удали обратимо»: `rm` необратим, а корзина недоступна.
 
-`gio_trash` даёт доверенный путь для этой операции: CLI перемещает файл в freedesktop-корзину, sidecar-индекс хранит метаданные, а DSH-плагин предоставляет модели типизированные инструменты `trash`, `trash_list`, `trash_restore`.
+`dsh-trash` даёт доверенный путь для этой операции: CLI перемещает файл в freedesktop-корзину, sidecar-индекс хранит метаданные, а DSH-плагин предоставляет модели типизированные инструменты `trash`, `trash_list`, `trash_restore`.
 
 ### 1.2. Пользовательские сценарии
 
@@ -53,7 +55,8 @@ DSH в режиме `workspace-write` разрешает изменения то
 - замена git, системы бэкапов или версионирования;
 - глобальный «undo» для любых изменений и слежение за файловой системой;
 - очистка чужих записей системной корзины и интеграция с файловыми менеджерами сверх формата freedesktop;
-- Windows и macOS (архитектура не запрещает, но v1 — Linux);
+- Windows и macOS — **не входят в v1**, запланированы на v1.1 отдельными бэкендами корзины;
+- topdir-корзина (`<mount>/.Trash-$uid`) — отложена до v1.1, в v1 домашняя корзина + copy-fallback;
 - сетевой/удалённый доступ, синхронизация между машинами;
 - UI в DSH Web (в v1 — только инструменты и текст результата).
 
@@ -64,13 +67,14 @@ DSH в режиме `workspace-write` разрешает изменения то
 | # | Решение | Обоснование | Следствия |
 |---|---------|-------------|-----------|
 | 1 | **Системная freedesktop-корзина как хранилище payload'а** (`$XDG_DATA_HOME/Trash/files`, `.../info/*.trashinfo`) | Файлы видны в файловых менеджерах и `gio trash --list`; стандартный формат; содержимое не дублируется | Записи может удалить/восстановить сторонний инструмент; индекс должен уметь сверяться с реальностью |
-| 2 | **Sidecar-индекс SQLite** в `$XDG_DATA_HOME/gio-trash/` | `.trashinfo` хранит только путь и дату; нужны workspace, размер, хеш, ctime/mtime, манифест, состояние | Индекс — истина для метаданных; payload — истина для содержимого; `doctor` мирит их |
+| 2 | **Sidecar-индекс SQLite** в `$XDG_DATA_HOME/dsh-trash/` | `.trashinfo` хранит только путь и дату; нужны workspace, размер, хеш, ctime/mtime, манифест, состояние | Индекс — истина для метаданных; payload — истина для содержимого; `doctor` мирит их |
 | 3 | **Свой движок по спецификации freedesktop, без `gio` и PyGObject** | Пробы показали: CLI `gio trash` не изолируется через `XDG_DATA_HOME` (gvfs-демон), печатает локализованный текст, `--restore` требует `trash:///` URI, а `Gio.File.trash` отказывается работать на tmpfs («Trashing on system internal mounts is not supported») | Минимум зависимостей, предсказуемость, тестируемость; same-device — атомарный `rename`, cross-device — copy+fsync+unlink |
-| 4 | **CLI `gio-trash` + отдельный DSH bundle** | CLI полезен человеку и тестам; плагин даёт модели типизированный контракт, не заставляя её собирать shell-команды | Два артефакта, но общий формат JSON и единая логика в CLI |
+| 4 | **CLI `dsh-trash` + отдельный DSH bundle** | CLI полезен человеку и тестам; плагин даёт модели типизированный контракт, не заставляя её собирать shell-команды | Два артефакта, но общий формат JSON и единая логика в CLI |
 | 5 | **Workspace идентифицируется по `(st_dev, st_ino)` корня**, id = `sha256("dev:ino")[:16]` | Переживает переименование каталога в пределах ФС; не зависит от `cd`; одинаков для fs- и shell-sandbox | `list`/`restore` фильтруют по `workspace_id`; переезд на другую ФС = новый workspace (старые записи не видны) |
 | 6 | **Плагин выполняет CLI как доверенный хост-процесс**, не через `ctx.fs` | Запись в корзину — вне workspace, `ctx.fs` её запретит; плагин сам проверяет режим sandbox и границы workspace | Sandbox не ослабляется: дополнительные writable roots не нужны; bash-маршрут в корзину остаётся закрытым |
-| 7 | **Содержимое не копируется в индекс** | Payload уже содержит байты; дублирование удваивает место и создаёт рассинхрон | В индексе: SHA-256, размер, текстовое превью (ограниченное), манифест каталога |
+| 7 | **Содержимое не копируется в индекс** | Payload уже содержит байты; дублирование удваивает место и создаёт рассинхрон | В индексе: SHA-256, размер, текстовое превью (включено по умолчанию, ≤ 4 КиБ, отключается), манифест каталога |
 | 8 | **Восстановление по относительному пути** от текущего корня workspace | Защищает от побега за пределы workspace и переживает переименование корня | `original_path` хранится для аудита, но цель по умолчанию — `workspace_root / relpath` |
+| 9 | **v1.1: topdir-корзина и платформенные бэкенды** для Windows/macOS | В v1 достаточно домашней корзины и copy-fallback; отдельные бэкенды — крупная самостоятельная работа | Интерфейс движка проектируем с самого начала с расчётом на несколько бэкендов |
 
 ### 2.1. Что именно проверено экспериментально
 
@@ -89,7 +93,7 @@ DSH в режиме `workspace-write` разрешает изменения то
   2. запретить операцию в `read-only`;
   3. канонизировать путь и проверить вложенность в `workspaceRoot`;
   4. передать CLI абсолютный путь и корень workspace, а не сырые аргументы модели.
-- **Bash-маршрут** (`gio-trash put ...` из-под sandbox) по умолчанию не работает: sandbox не даёт писать в `Trash` и индекс. Это осознанно; включение `additionalWritableRoots` для корзины описано в разделе 6 как нерекомендуемая опция.
+- **Bash-маршрут** (`dsh-trash put ...` из-под sandbox) по умолчанию не работает: sandbox не даёт писать в `Trash` и индекс. Это осознанно; включение `additionalWritableRoots` для корзины описано в разделе 6 как нерекомендуемая опция.
 
 ---
 
@@ -99,13 +103,13 @@ DSH в режиме `workspace-write` разрешает изменения то
 
 ```
 ┌──────────────┐   tool call    ┌──────────────────┐   spawn (argv)   ┌─────────────────┐
-│ модель / DSH │ ─────────────> │ dsh-plugin-      │ ───────────────> │ gio-trash CLI   │
-│ (агент)      │ <───────────── │ gio-trash (host) │ <─────────────── │ (Python)        │
+│ модель / DSH │ ─────────────> │ dsh-plugin-      │ ───────────────> │ dsh-trash CLI   │
+│ (агент)      │ <───────────── │ dsh-trash (host) │ <─────────────── │ (Python)        │
 └──────────────┘   JSON result  └──────────────────┘   JSON stdout    └────────┬────────┘
                                                                                │
                                        ┌───────────────────────────────────────┤
                                        ▼                                       ▼
-                            $XDG_DATA_HOME/Trash                    $XDG_DATA_HOME/gio-trash/
+                            $XDG_DATA_HOME/Trash                    $XDG_DATA_HOME/dsh-trash/
                             files/ + info/*.trashinfo               index.sqlite3, manifests/
 ```
 
@@ -116,12 +120,12 @@ DSH в режиме `workspace-write` разрешает изменения то
 ### 3.2. Раскладка репозитория
 
 ```
-gio_trash/
+gio_trash/                         # имя каталога репозитория
 ├── PLAN.md
 ├── README.md
-├── pyproject.toml                 # console_scripts: gio-trash
-├── src/gio_trash/
-│   ├── __main__.py                # python -m gio_trash
+├── pyproject.toml                 # console_scripts: dsh-trash
+├── src/dsh_trash/
+│   ├── __main__.py                # python -m dsh_trash
 │   ├── cli.py                     # argparse, JSON/human output, exit codes
 │   ├── workspace.py               # канонизация, containment, protected paths
 │   ├── metadata.py                # statx/ctime/mtime, sha256, превью, манифест
@@ -143,7 +147,7 @@ gio_trash/
 2. `PATH` разрешается относительно cwd и канонизируется; запрещены: сам корень workspace, `Trash`, каталог индекса, `/`, `$HOME`, защищённые пути (по умолчанию `.git`).
 3. `lstat` без перехода по финальной symlink; поддерживаются `file`, `dir`, `symlink`. Спецфайлы (socket, fifo, device) отклоняются.
 4. Собираются метаданные **до** перемещения: размер, режим, uid/gid, mtime/ctime/birthtime, SHA-256 (для файла), превью, манифест (для каталога).
-5. Берётся эксклюзивная блокировка (`flock`) на `gio-trash/lock`.
+5. Берётся эксклюзивная блокировка (`flock`) на `dsh-trash/lock`.
 6. В индекс пишется строка `state=pending` с полными метаданными и намерением.
 7. В `Trash/files` резервируется имя с учётом коллизий; файл перемещается:
    - та же ФС — атомарный `os.rename`;
@@ -173,7 +177,7 @@ gio_trash/
 - `list` по умолчанию скрывает записи, у которых payload исчез, но не удаляет их;
 - `doctor` сообщает: `pending` старше 10 минут, отсутствующий payload, несовпадение размера/хеша, `.trashinfo` без строки индекса (orphan), строку без `.trashinfo`;
 - `doctor --fix` завершает `pending` по факту наличия payload и помечает `missing`; `.trashinfo` без строки индекса только показываются в отчёте и автоматически не удаляются;
-- записи, созданные не через `gio_trash`, в индекс не попадают и инструментами DSH не видны (это ожидаемо).
+- записи, созданные не через `dsh-trash`, в индекс не попадают и инструментами DSH не видны (это ожидаемо).
 
 ### 3.6. Конкурентность и блокировки
 
@@ -253,8 +257,8 @@ CREATE INDEX entries_state ON entries(state);
 Payload — единственная копия содержимого. В индексе:
 
 - `sha256` для обычного файла (потоково, блоками 1 МиБ);
-- `preview` для текстовых файлов: не более 4096 символов, только если данные декодируются как UTF-8 и не содержат NUL; флаг `preview_truncated`;
-- для каталога — JSON-манифест в `gio-trash/manifests/<id>.json`:
+- `preview` для текстовых файлов: **включено по умолчанию**, не более 4096 символов, только если данные декодируются как UTF-8 и не содержат NUL; флаг `preview_truncated`. Отключается `--no-preview` (CLI) или `preview: false` (плагин); при отключении поле в индекс не пишется;
+- для каталога — JSON-манифест в `dsh-trash/manifests/<id>.json`:
 
 ```json
 {
@@ -282,13 +286,13 @@ Payload — единственная копия содержимого. В ин�
 
 | Команда | Назначение | Ключевые флаги |
 |---------|------------|----------------|
-| `gio-trash put PATH` | Переместить файл/каталог в корзину и записать метаданные | `--workspace DIR`, `--reason TEXT`, `--dry-run`, `--no-preview`, `--json` |
-| `gio-trash list` | Список записей workspace'а | `--workspace DIR`, `--all`, `--limit N`, `--state active\|restored\|missing`, `--json` |
-| `gio-trash show ID` | Полные метаданные записи | `--json` |
-| `gio-trash restore ID` | Вернуть запись в workspace | `--workspace DIR`, `--to PATH`, `--force`, `--json` |
-| `gio-trash empty` | Удалить записи (payload, `.trashinfo`, манифест) | `--workspace DIR`, `--older-than 30d`, `--yes`, `--json` |
-| `gio-trash doctor` | Сверка индекса и корзины | `--fix`, `--json` |
-| `gio-trash version` | Версия и пути хранилища | `--json` |
+| `dsh-trash put PATH` | Переместить файл/каталог в корзину и записать метаданные | `--workspace DIR`, `--reason TEXT`, `--dry-run`, `--no-preview`, `--json` |
+| `dsh-trash list` | Список записей workspace'а | `--workspace DIR`, `--all`, `--limit N`, `--state active\|restored\|missing`, `--json` |
+| `dsh-trash show ID` | Полные метаданные записи | `--json` |
+| `dsh-trash restore ID` | Вернуть запись в workspace | `--workspace DIR`, `--to PATH`, `--force`, `--json` |
+| `dsh-trash empty` | Удалить записи (payload, `.trashinfo`, манифест) | `--workspace DIR`, `--older-than 30d`, `--yes`, `--json` |
+| `dsh-trash doctor` | Сверка индекса и корзины | `--fix`, `--json` |
+| `dsh-trash version` | Версия и пути хранилища | `--json` |
 
 Правила по умолчанию:
 
@@ -331,8 +335,9 @@ Payload — единственная копия содержимого. В ин�
 
 ### 5.4. Конфигурация
 
-- `XDG_DATA_HOME` — база для `Trash/` и `gio-trash/` (по умолчанию `~/.local/share`). Этого достаточно для изоляции в тестах.
-- `GIO_TRASH_LOCK_TIMEOUT` — секунды ожидания flock (по умолчанию 10).
+- `XDG_DATA_HOME` — база для `Trash/` и `dsh-trash/` (по умолчанию `~/.local/share`). Этого достаточно для изоляции в тестах.
+- `DSH_TRASH_LOCK_TIMEOUT` — секунды ожидания flock (по умолчанию 10).
+- `preview` включён по умолчанию; `--no-preview` отключает сбор текстового превью.
 - Никаких сетевых вызовов и никаких зависимостей вне stdlib.
 
 ---
@@ -341,11 +346,11 @@ Payload — единственная копия содержимого. В ин�
 
 ### 6.1. Формат поставки
 
-Отдельный npm-пакет `dsh-plugin-gio-trash` в каталоге `dsh-plugin/`, устанавливаемый как bundle:
+Отдельный npm-пакет `dsh-plugin-trash` в каталоге `dsh-plugin/`, устанавливаемый как bundle:
 
 ```json
 {
-  "name": "dsh-plugin-gio-trash",
+  "name": "dsh-plugin-trash",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
@@ -367,11 +372,12 @@ Payload — единственная копия содержимого. В ин�
 
 ```yaml
 - insert:
-    - id: tool-gio-trash
-      name: dsh-plugin-gio-trash
+    - id: tool-trash
+      name: dsh-plugin-trash
       config:
-        cliPath: gio-trash
+        cliPath: dsh-trash
         timeoutMs: 20000
+        preview: true
 ```
 
 Установка: `dsh plugin --profile <name> add ./dsh-plugin`.
@@ -413,7 +419,7 @@ const result = await ctx.subprocess.spawn({
 })
 ```
 
-и разбор строгого JSON-контракта (раздел 5.2). Никакого `shell: true`, никакой интерполяции пользовательских строк в argv.
+и разбор строгого JSON-контракта (раздел 5.2). Никакого `shell: true`, никакой интерполяции пользовательских строк в argv. При `preview: false` в конфиге плагин добавляет `--no-preview`.
 
 Почему не `ctx.fs.moveFile`: `ctx.fs` — sandboxed-провайдер, перемещение в `Trash` будет отклонено как запись вне workspace. Инструмент — доверенный код хоста, который сам реализует политику. Это не лазейка: путь модели всё равно ограничен workspace, а режим `read-only` запрещает вызов.
 
@@ -424,10 +430,10 @@ const result = await ctx.subprocess.spawn({
 | `read-only` | `[sandbox: file access denied under read-only mode]` + подсказка, что trash недоступен |
 | путь вне workspace | `path is outside the session workspace: <path>` (без stack trace) |
 | защищённый путь | `refusing to trash protected path: .git`; обхода из инструмента нет |
-| CLI не найден | `gio-trash CLI not found; install it or set cliPath in the plugin config` |
+| CLI не найден | `dsh-trash CLI not found; install it or set cliPath in the plugin config` |
 | конфликт restore | `target already exists: <relpath>; pass force=true to replace it (the existing file is moved to trash)` |
-| таймаут | `gio-trash timed out after 20000 ms` |
-| ошибка индекса | `trash index is unavailable: <code>` + рекомендация `gio-trash doctor` |
+| таймаут | `dsh-trash timed out after 20000 ms` |
+| ошибка индекса | `trash index is unavailable: <code>` + рекомендация `dsh-trash doctor` |
 
 Все ошибки — структурированные, без вывода stderr как есть (stderr может содержать пути и локализованный текст).
 
@@ -445,10 +451,10 @@ const result = await ctx.subprocess.spawn({
 
 ### 6.7. Ослабление sandbox (не рекомендуется)
 
-Если пользователю нужно вызывать `gio-trash` из bash внутри sandbox, придётся добавить в `sandboxPolicy.additionalWritableRoots`:
+Если пользователю нужно вызывать `dsh-trash` из bash внутри sandbox, придётся добавить в `sandboxPolicy.additionalWritableRoots`:
 
 - `$XDG_DATA_HOME/Trash`,
-- `$XDG_DATA_HOME/gio-trash`.
+- `$XDG_DATA_HOME/dsh-trash`.
 
 Это даёт модели право писать (и удалять) **всю** пользовательскую корзину и индекс, включая чужие записи, поэтому по умолчанию не делается и не входит в поставку. Документируем как явный, осознанный риск; альтернатива на будущее — привилегированный helper-демон с unix-socket и проверкой workspace на своей стороне.
 
@@ -478,7 +484,7 @@ const result = await ctx.subprocess.spawn({
 По умолчанию запрещено перемещать:
 
 - сам корень workspace;
-- `Trash` и `gio-trash` (включая попытку «удалить корзину»);
+- `Trash` и `dsh-trash` (включая попытку «удалить корзину»);
 - `.git` (каталог/файл) внутри workspace;
 - `/`, `$HOME`, родительские каталоги workspace.
 
@@ -488,12 +494,12 @@ const result = await ctx.subprocess.spawn({
 
 - `Trash/` — 0700, `Trash/files` — 0700, `Trash/info` — 0700.
 - `.trashinfo` — 0600.
-- `gio-trash/` — 0700; `index.sqlite3` и `manifests/` — 0600/0700.
+- `dsh-trash/` — 0700; `index.sqlite3` и `manifests/` — 0600/0700.
 - При копировании сохраняются mode и mtime (best effort; xattr — по возможности).
 
 ### 7.4. Что будет, если индекс потерян
 
-`.trashinfo` содержит абсолютный путь и дату удаления — этого достаточно, чтобы вручную восстановить файл из `Trash/files`. `gio-trash doctor` находит «осиротевшие» `.trashinfo` и показывает их в отчёте; импорт таких записей в индекс (с назначением workspace) — кандидат на v1.1, в v1 автоматического импорта нет. Payload при потере индекса не страдает.
+`.trashinfo` содержит абсолютный путь и дату удаления — этого достаточно, чтобы вручную восстановить файл из `Trash/files`. `dsh-trash doctor` находит «осиротевшие» `.trashinfo` и показывает их в отчёте; импорт таких записей в индекс (с назначением workspace) — кандидат на v1.1, в v1 автоматического импорта нет. Payload при потере индекса не страдает.
 
 ---
 
@@ -540,7 +546,7 @@ const result = await ctx.subprocess.spawn({
 2. Попросить агента удалить файл → в ответе id; `ls "$XDG_DATA_HOME/Trash/files"` содержит payload.
 3. `gio trash --list | grep <имя>` (на домашней ФС) показывает запись.
 4. `trash_list` → `trash_restore` возвращает файл.
-5. `bash`: `rm ../outside.txt` → sandbox по-прежнему запрещает; прямой `gio-trash put` из bash → отказ записи в Trash.
+5. `bash`: `rm ../outside.txt` → sandbox по-прежнему запрещает; прямой `dsh-trash put` из bash → отказ записи в Trash.
 6. Второй workspace не видит запись первого.
 
 ### 8.5. Совместимость
@@ -562,7 +568,7 @@ const result = await ctx.subprocess.spawn({
 
 ### Этап 1. Ядро хранилища и `put`
 
-- `pyproject.toml` (`console_scripts=gio-trash`), `errors.py`, `workspace.py`, `metadata.py`, `trashdir.py`, `index.py`.
+- `pyproject.toml` (`console_scripts=dsh-trash`), `errors.py`, `workspace.py`, `metadata.py`, `trashdir.py`, `index.py`.
 - `engine.put`: pending → rename/copy → `.trashinfo` → active.
 - Команды `put`, `version`; `--json`, `--dry-run`.
 - Тесты: unit, коллизии имён, права, откат при сбое, формат `.trashinfo`.
@@ -591,14 +597,23 @@ const result = await ctx.subprocess.spawn({
 
 ### Этап 5. Документация и выпуск
 
-- README: установка CLI, установка bundle, примеры, ограничения (Linux, topdir trash отложен).
+- README: установка CLI, установка bundle, примеры, ограничения (Linux; topdir, Windows/macOS — v1.1).
 - `SECURITY.md` с моделью угроз и нерекомендуемым `additionalWritableRoots`.
 - CI: pytest + vitest + линтеры; сборка wheel.
 - Критерий: чистая установка с нуля по README; E2E-чек-лист пройден.
 
+### Этап 6. v1.1 — topdir-корзина, Windows и macOS
+
+- **Topdir-корзина** для файлов на другой ФС: `<mount>/.Trash/$uid` или `<mount>/.Trash-$uid` по спецификации; атомарный `rename` вместо copy-fallback, учёт прав и sticky-bit.
+- **Абстракция бэкенда**: `TrashBackend` (`put`, `restore`, `delete`, `locate`) с реализациями `freedesktop` (v1) и `windows`/`macos` (v1.1).
+- **Windows**: Recycle Bin через `IFileOperation`/`SHFileOperation`; метаданные — только sidecar-индекс (`.trashinfo` не используется).
+- **macOS**: `NSFileManager.trashItem` / `~/.Trash`; restore — обратное перемещение с проверкой workspace.
+- Тесты на CI-раннерах Windows/macOS; кросс-платформенные пути (case-insensitive ФС, длинные пути, unicode).
+- Критерий: round-trip на каждой ОС; workspace-изоляция и sandbox-политика не меняются; Linux-поведение v1 не регрессирует.
+
 ---
 
-## 10. Риски и открытые вопросы
+## 10. Риски и вопросы
 
 ### 10.1. Риски
 
@@ -612,27 +627,41 @@ const result = await ctx.subprocess.spawn({
 | Изменения API DSH 0.x | средняя | узкая зависимость: `tools`, `sandboxPolicy`, `subprocess`, `workingDirectory` |
 | Переиспользование inode после удаления workspace | низкая | id по `(dev, ino)`; при совпадении старый путь обновляется; задокументировано, сброс — пересоздать индекс |
 | Пользователь включил `additionalWritableRoots` | низкая | явная документация риска, не включаем по умолчанию |
+| Windows/macOS-бэкенды расходятся по поведению | средняя | общий интерфейс `TrashBackend`, единый JSON-контракт, кросс-платформенные тесты в v1.1 |
 
-### 10.2. Открытые вопросы
+### 10.2. Решённые вопросы
 
-1. Имя CLI: `gio-trash` (совпадает с репозиторием, но подразумевает GNOME GIO) или `dsh-trash` (точнее по смыслу)? Предлагаю `gio-trash`, зависимостей от GIO нет.
-2. Делать ли topdir-корзину (`<mount>/.Trash-$uid`) уже в v1 или отложить до v1.1? Предлагаю отложить: v1 — домашняя корзина + copy-fallback.
-3. Превью содержимого по умолчанию включено или выключено? Предлагаю включено с лимитом 4 КиБ и отключением флагом.
-4. Нужен ли `trash` для нескольких путей за вызов? Предлагаю v1 — один путь.
-5. Нужна ли retention-политика (автоочистка старше N дней)? Предлагаю только ручной `empty`.
-6. Поддержка macOS/Windows: формат `.trashinfo` — Linux/freedesktop; для других ОС нужен отдельный бэкенд. Вне v1.
+- **Имя:** `dsh-trash` (каталог репозитория остаётся `gio_trash`).
+- **Topdir-корзина:** отложена до v1.1; v1 — домашняя корзина + copy-fallback.
+- **Превью:** включено по умолчанию, лимит 4 КиБ, отключается.
+- **Windows/macOS:** v1.1, отдельные бэкенды.
+
+### 10.3. Оставшиеся вопросы
+
+1. Нужен ли `trash` для нескольких путей за вызов? Предлагаю v1 — один путь (меньше валидации и понятнее ошибки).
+2. Нужна ли retention-политика (автоочистка старше N дней)? Предлагаю только ручной `empty`.
+3. Детали v1.1: shared `<mount>/.Trash` против приватного `<mount>/.Trash-$uid`, обработка прав и чужих файлов на общих разделах.
+4. Windows v1.1: `IFileOperation` (нативный, асинхронный) против `SHFileOperation` (проще, deprecated) — решить на этапе 6.
 
 ---
 
 ## 11. Definition of Done (v1)
 
-- [ ] `gio-trash put/list/show/restore/empty/doctor` работают по контракту раздела 5, exit codes соблюдены.
+- [ ] `dsh-trash put/list/show/restore/empty/doctor` работают по контракту раздела 5, exit codes соблюдены.
 - [ ] Файл, каталог и симлинк переживают round-trip; sha256, mode и mtime сохраняются (где позволяет ФС).
 - [ ] `.trashinfo` совместим с freedesktop; запись видна `gio trash --list`.
 - [ ] `list`/`restore` изолированы по workspace; восстановление никогда не выходит за корень.
 - [ ] `read-only` запрещает trash; `workspace-write` разрешает только внутри workspace; bash-маршрут в корзину закрыт.
+- [ ] Превью включено по умолчанию и отключается; секреты не попадают в индекс при `--no-preview`.
 - [ ] Сбои (обрыв, внешняя очистка, коллизии, конкурентность) не теряют данные и диагностируются `doctor`.
 - [ ] Плагин устанавливается как bundle, регистрирует ровно три инструмента, не ломает композиции без CLI.
 - [ ] README + SECURITY + ручной E2E-чек-лист; CI зелёный.
+
+## 12. Definition of Done (v1.1)
+
+- [ ] Topdir-корзина работает на отдельном смонтированном разделе без копирования через домашнюю ФС.
+- [ ] Windows и macOS: `put/list/restore` работают, workspace-изоляция и `read-only` соблюдаются.
+- [ ] Метаданные и JSON-контракт CLI не различаются между платформами; Linux-тесты v1 остаются зелёными.
+- [ ] CI собирает и тестирует все три ОС; README описывает различия бэкендов.
 
 
