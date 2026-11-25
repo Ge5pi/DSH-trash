@@ -182,7 +182,7 @@ Detailed architecture, data model, and design rationale live in [PLAN.md](PLAN.m
 - One `trash` call handles one path; bulk cleanup means several calls.
 - There is no automatic retention policy, only manual `empty`.
 - Text previews are enabled by default; use `--no-preview` for sensitive files.
-- The DSH bundle loads in an isolated DSH profile and its tools are tested against the real `defineTool` with a fake subprocess; a full model-driven run is still pending.
+- The DSH bundle loads in an isolated DSH profile, and its tools are tested against the real `defineTool` and a real CLI subprocess; a full model-driven run is still pending.
 
 ## Testing
 
@@ -191,7 +191,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 cd dsh-plugin && node --test test/*.test.js
 ```
 
-Currently: 63 Python tests and 8 plugin tests (including a real `defineTool` integration with a fake subprocess).
+Currently: 63 Python tests and 9 plugin tests (including a live `defineTool` + CLI round trip).
 
 ## Layout
 
